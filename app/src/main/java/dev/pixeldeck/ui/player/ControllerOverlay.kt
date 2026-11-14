@@ -3,18 +3,19 @@ package dev.pixeldeck.ui.player
 import android.view.KeyEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -53,7 +54,107 @@ import dev.pixeldeck.data.settings.AppSettings
 import dev.pixeldeck.emulation.RetroKeys
 import kotlin.math.roundToInt
 
-private val AnalogSystems = setOf("psx", "n64", "psp", "dreamcast", "ps2", "nds")
+private enum class StartSelectMode { BOTH, START_ONLY, NONE }
+
+private data class FaceButtonSpec(
+    val keyCode: Int,
+    val label: String,
+    val tint: Color,
+    val symbol: Boolean = false,
+)
+
+private data class PadProfile(
+    val analog: Boolean,
+    val faceButtons: List<FaceButtonSpec>,
+    val shoulders: Boolean,
+    val startSelect: StartSelectMode,
+)
+
+private val FACE_A = FaceButtonSpec(RetroKeys.A, "A", Color(0xFF5BE3A6))
+private val FACE_B = FaceButtonSpec(RetroKeys.B, "B", Color(0xFFFF7597))
+private val FACE_X = FaceButtonSpec(RetroKeys.X, "X", Color(0xFF6FB6FF))
+private val FACE_Y = FaceButtonSpec(RetroKeys.Y, "Y", Color(0xFFFFD166))
+private val FACE_C = FaceButtonSpec(RetroKeys.X, "C", Color(0xFFB388FF))
+
+private val PS_TRIANGLE = FaceButtonSpec(RetroKeys.X, "\u25B3", Color(0xFF5BE3A6), symbol = true)
+private val PS_CIRCLE = FaceButtonSpec(RetroKeys.A, "\u25CB", Color(0xFFFF7597), symbol = true)
+private val PS_CROSS = FaceButtonSpec(RetroKeys.B, "\u00D7", Color(0xFF6FB6FF), symbol = true)
+private val PS_SQUARE = FaceButtonSpec(RetroKeys.Y, "\u25A1", Color(0xFFB388FF), symbol = true)
+
+private val N64_C_UP = FaceButtonSpec(RetroKeys.X, "C\u2191", Color(0xFFFFD166))
+private val N64_C_LEFT = FaceButtonSpec(RetroKeys.Y, "C\u2190", Color(0xFFB388FF))
+
+private fun padProfile(systemId: String): PadProfile = when (systemId) {
+    "nes", "gb", "gbc" -> PadProfile(
+        analog = false,
+        faceButtons = listOf(FACE_B, FACE_A),
+        shoulders = false,
+        startSelect = StartSelectMode.BOTH,
+    )
+
+    "gba" -> PadProfile(
+        analog = false,
+        faceButtons = listOf(FACE_B, FACE_A),
+        shoulders = true,
+        startSelect = StartSelectMode.BOTH,
+    )
+
+    "snes" -> PadProfile(
+        analog = false,
+        faceButtons = listOf(FACE_X, FACE_A, FACE_B, FACE_Y),
+        shoulders = true,
+        startSelect = StartSelectMode.BOTH,
+    )
+
+    "genesis" -> PadProfile(
+        analog = false,
+        faceButtons = listOf(FACE_A, FACE_B, FACE_C),
+        shoulders = false,
+        startSelect = StartSelectMode.START_ONLY,
+    )
+
+    "psx", "psp", "ps2" -> PadProfile(
+        analog = true,
+        faceButtons = listOf(PS_TRIANGLE, PS_CIRCLE, PS_CROSS, PS_SQUARE),
+        shoulders = true,
+        startSelect = StartSelectMode.BOTH,
+    )
+
+    "n64" -> PadProfile(
+        analog = true,
+        faceButtons = listOf(N64_C_UP, FACE_A, FACE_B, N64_C_LEFT),
+        shoulders = true,
+        startSelect = StartSelectMode.START_ONLY,
+    )
+
+    "dreamcast" -> PadProfile(
+        analog = true,
+        faceButtons = listOf(FACE_X, FACE_A, FACE_B, FACE_Y),
+        shoulders = true,
+        startSelect = StartSelectMode.START_ONLY,
+    )
+
+    "nds" -> PadProfile(
+        analog = false,
+        faceButtons = listOf(FACE_X, FACE_A, FACE_B, FACE_Y),
+        shoulders = true,
+        startSelect = StartSelectMode.BOTH,
+    )
+
+    "arcade" -> PadProfile(
+        analog = false,
+        faceButtons = listOf(FACE_X, FACE_A, FACE_B, FACE_Y),
+        shoulders = false,
+        startSelect = StartSelectMode.BOTH,
+    )
+
+    else -> PadProfile(
+        analog = false,
+        faceButtons = listOf(FACE_X, FACE_A, FACE_B, FACE_Y),
+        shoulders = true,
+        startSelect = StartSelectMode.BOTH,
+    )
+}
 
 @Composable
 fun ControllerOverlay(
@@ -64,6 +165,7 @@ fun ControllerOverlay(
     onInteraction: () -> Unit,
 ) {
     val alpha = settings.touchControlsOpacity.coerceIn(0.25f, 1f)
+    val profile = padProfile(game.system.id)
     val platformHaptics = LocalHapticFeedback.current
     val haptics = remember(platformHaptics, settings.hapticsEnabled) {
         if (settings.hapticsEnabled) {
@@ -80,69 +182,75 @@ fun ControllerOverlay(
     }
 
     CompositionLocalProvider(LocalHapticFeedback provides haptics) {
-    Box(modifier = modifier.fillMaxSize()) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 18.dp, vertical = 14.dp),
-        ) {
-            if (game.system.id in AnalogSystems) {
-                VirtualStick(
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .offset(y = (-28).dp),
-                    onMove = { x, y ->
-                        view.sendMotionEvent(GLRetroView.MOTION_SOURCE_ANALOG_LEFT, x, y)
-                        onInteraction()
-                    },
+        Box(modifier = modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 18.dp, vertical = 14.dp),
+            ) {
+                if (profile.analog) {
+                    VirtualStick(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(bottom = 190.dp),
+                        onMove = { x, y ->
+                            view.sendMotionEvent(GLRetroView.MOTION_SOURCE_ANALOG_LEFT, x, y)
+                            onInteraction()
+                        },
+                    )
+                }
+
+                Dpad(
+                    modifier = Modifier.align(Alignment.BottomStart),
+                    onKey = sendKey,
+                    alpha = alpha,
                 )
+
+                FaceCluster(
+                    buttons = profile.faceButtons,
+                    modifier = Modifier.align(Alignment.BottomEnd),
+                    onKey = sendKey,
+                    alpha = alpha,
+                )
+
+                if (profile.startSelect != StartSelectMode.NONE) {
+                    StartSelect(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 10.dp),
+                        onKey = sendKey,
+                        alpha = alpha,
+                        showSelect = profile.startSelect == StartSelectMode.BOTH,
+                    )
+                }
+
+                if (profile.shoulders) {
+                    HoldButton(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .width(86.dp)
+                            .height(40.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        label = "L",
+                        alpha = alpha,
+                        onKey = sendKey,
+                        keyCode = RetroKeys.L,
+                    )
+
+                    HoldButton(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .width(86.dp)
+                            .height(40.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        label = "R",
+                        alpha = alpha,
+                        onKey = sendKey,
+                        keyCode = RetroKeys.R,
+                    )
+                }
             }
-
-            Dpad(
-                modifier = Modifier.align(Alignment.BottomStart),
-                onKey = sendKey,
-                alpha = alpha,
-            )
-
-            ActionCluster(
-                modifier = Modifier.align(Alignment.BottomEnd),
-                onKey = sendKey,
-                alpha = alpha,
-            )
-
-            StartSelect(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 10.dp),
-                onKey = sendKey,
-                alpha = alpha,
-            )
-
-            HoldButton(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .width(86.dp)
-                    .height(40.dp),
-                shape = RoundedCornerShape(12.dp),
-                label = "L",
-                alpha = alpha,
-                onKey = sendKey,
-                keyCode = RetroKeys.L,
-            )
-
-            HoldButton(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .width(86.dp)
-                    .height(40.dp),
-                shape = RoundedCornerShape(12.dp),
-                label = "R",
-                alpha = alpha,
-                onKey = sendKey,
-                keyCode = RetroKeys.R,
-            )
         }
-    }
     }
 }
 
@@ -193,44 +301,91 @@ private fun Dpad(
 }
 
 @Composable
-private fun ActionCluster(
+private fun FaceCluster(
+    buttons: List<FaceButtonSpec>,
     onKey: (Int, Int) -> Unit,
     alpha: Float,
     modifier: Modifier = Modifier,
 ) {
-    Box(modifier = modifier.size(180.dp)) {
-        HoldButton(
-            modifier = Modifier.align(Alignment.TopCenter).size(62.dp),
-            label = "X",
-            tint = Color(0xFF6FB6FF),
-            alpha = alpha,
-            onKey = onKey,
-            keyCode = RetroKeys.X,
-        )
-        HoldButton(
-            modifier = Modifier.align(Alignment.BottomCenter).size(62.dp),
-            label = "B",
-            tint = Color(0xFFFF7597),
-            alpha = alpha,
-            onKey = onKey,
-            keyCode = RetroKeys.B,
-        )
-        HoldButton(
-            modifier = Modifier.align(Alignment.CenterStart).size(62.dp),
-            label = "Y",
-            tint = Color(0xFFFFD166),
-            alpha = alpha,
-            onKey = onKey,
-            keyCode = RetroKeys.Y,
-        )
-        HoldButton(
-            modifier = Modifier.align(Alignment.CenterEnd).size(62.dp),
-            label = "A",
-            tint = Color(0xFF5BE3A6),
-            alpha = alpha,
-            onKey = onKey,
-            keyCode = RetroKeys.A,
-        )
+    when (buttons.size) {
+        2 -> Row(
+            modifier = modifier,
+            horizontalArrangement = Arrangement.spacedBy(18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            buttons.forEachIndexed { index, button ->
+                HoldButton(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .offset(y = if (index == 1) (-18).dp else 0.dp),
+                    label = button.label,
+                    tint = button.tint,
+                    fontSize = if (button.symbol) 22.sp else 17.sp,
+                    alpha = alpha,
+                    onKey = onKey,
+                    keyCode = button.keyCode,
+                )
+            }
+        }
+
+        3 -> Row(
+            modifier = modifier,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            buttons.forEachIndexed { index, button ->
+                HoldButton(
+                    modifier = Modifier
+                        .size(58.dp)
+                        .offset(y = if (index == 1) (-12).dp else 0.dp),
+                    label = button.label,
+                    tint = button.tint,
+                    fontSize = if (button.symbol) 22.sp else 17.sp,
+                    alpha = alpha,
+                    onKey = onKey,
+                    keyCode = button.keyCode,
+                )
+            }
+        }
+
+        else -> Box(modifier = modifier.size(180.dp)) {
+            HoldButton(
+                modifier = Modifier.align(Alignment.TopCenter).size(62.dp),
+                label = buttons[0].label,
+                tint = buttons[0].tint,
+                fontSize = if (buttons[0].symbol) 22.sp else 17.sp,
+                alpha = alpha,
+                onKey = onKey,
+                keyCode = buttons[0].keyCode,
+            )
+            HoldButton(
+                modifier = Modifier.align(Alignment.CenterEnd).size(62.dp),
+                label = buttons[1].label,
+                tint = buttons[1].tint,
+                fontSize = if (buttons[1].symbol) 22.sp else 17.sp,
+                alpha = alpha,
+                onKey = onKey,
+                keyCode = buttons[1].keyCode,
+            )
+            HoldButton(
+                modifier = Modifier.align(Alignment.BottomCenter).size(62.dp),
+                label = buttons[2].label,
+                tint = buttons[2].tint,
+                fontSize = if (buttons[2].symbol) 22.sp else 17.sp,
+                alpha = alpha,
+                onKey = onKey,
+                keyCode = buttons[2].keyCode,
+            )
+            HoldButton(
+                modifier = Modifier.align(Alignment.CenterStart).size(62.dp),
+                label = buttons[3].label,
+                tint = buttons[3].tint,
+                fontSize = if (buttons[3].symbol) 22.sp else 17.sp,
+                alpha = alpha,
+                onKey = onKey,
+                keyCode = buttons[3].keyCode,
+            )
+        }
     }
 }
 
@@ -238,19 +393,22 @@ private fun ActionCluster(
 private fun StartSelect(
     onKey: (Int, Int) -> Unit,
     alpha: Float,
+    showSelect: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Row(modifier = modifier) {
-        HoldButton(
-            modifier = Modifier.width(74.dp).height(32.dp),
-            shape = RoundedCornerShape(50),
-            label = "SELECT",
-            fontSize = 9.sp,
-            alpha = alpha,
-            onKey = onKey,
-            keyCode = RetroKeys.SELECT,
-        )
-        Box(Modifier.width(12.dp))
+        if (showSelect) {
+            HoldButton(
+                modifier = Modifier.width(74.dp).height(32.dp),
+                shape = RoundedCornerShape(50),
+                label = "SELECT",
+                fontSize = 9.sp,
+                alpha = alpha,
+                onKey = onKey,
+                keyCode = RetroKeys.SELECT,
+            )
+            Box(Modifier.width(12.dp))
+        }
         HoldButton(
             modifier = Modifier.width(74.dp).height(32.dp),
             shape = RoundedCornerShape(50),

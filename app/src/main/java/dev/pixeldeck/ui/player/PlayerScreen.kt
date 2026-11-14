@@ -7,11 +7,8 @@ import android.content.pm.ActivityInfo
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -64,6 +61,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -205,7 +203,7 @@ private fun PlayerContent(
 
     val view = remember(prepared) { GLRetroView(context, data) }
 
-    var controlsVisible by remember { mutableStateOf(true) }
+    var controlsDimmed by remember { mutableStateOf(false) }
     var interactionTick by remember { mutableIntStateOf(0) }
     var menuVisible by remember { mutableStateOf(false) }
     var fastForward by remember { mutableStateOf(false) }
@@ -214,6 +212,11 @@ private fun PlayerContent(
     var shader by remember { mutableStateOf(settings.shader) }
     val exitGuard = remember { AtomicBoolean(false) }
     val viewCreated = remember { AtomicBoolean(false) }
+    val controlsAlpha by animateFloatAsState(
+        targetValue = if (controlsDimmed) 0.45f else 1f,
+        animationSpec = tween(220),
+        label = "controlsAlpha",
+    )
 
     fun exit() {
         if (!exitGuard.compareAndSet(false, true)) return
@@ -225,10 +228,10 @@ private fun PlayerContent(
 
     BackHandler { exit() }
 
-    LaunchedEffect(controlsVisible, interactionTick, menuVisible) {
-        if (controlsVisible && !menuVisible) {
+    LaunchedEffect(controlsDimmed, interactionTick, menuVisible) {
+        if (!controlsDimmed && !menuVisible) {
             delay(4_000)
-            controlsVisible = false
+            controlsDimmed = true
         }
     }
 
@@ -298,56 +301,43 @@ private fun PlayerContent(
                 .fillMaxSize()
                 .pointerInput(Unit) {
                     detectTapGestures {
-                        controlsVisible = !controlsVisible
+                        controlsDimmed = !controlsDimmed
                         interactionTick++
                     }
                 },
         )
 
-        AnimatedVisibility(
-            visible = controlsVisible,
-            modifier = Modifier.matchParentSize(),
-            enter = fadeIn(tween(160)),
-            exit = fadeOut(tween(220)),
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .alpha(controlsAlpha),
         ) {
             ControllerOverlay(
                 view = view,
                 game = game,
                 settings = settings,
-                onInteraction = { interactionTick++ },
+                onInteraction = {
+                    controlsDimmed = false
+                    interactionTick++
+                },
             )
         }
 
-        AnimatedVisibility(
-            visible = controlsVisible,
-            modifier = Modifier.align(Alignment.TopCenter),
-            enter = fadeIn(tween(150)) + slideInVertically(tween(180)) { -it / 3 },
-            exit = fadeOut(tween(150)),
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .alpha(controlsAlpha),
         ) {
             PlayerTopBar(
                 game = game,
                 fps = fps,
                 showFps = settings.showFps,
                 onBack = { exit() },
-                onMenu = { menuVisible = true },
+                onMenu = {
+                    controlsDimmed = false
+                    menuVisible = true
+                },
             )
-        }
-
-        if (settings.showFps && !controlsVisible) {
-            GlassPanel(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .statusBarsPadding()
-                    .padding(12.dp),
-                shape = RoundedCornerShape(50),
-            ) {
-                Text(
-                    text = "$fps FPS",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = fpsColor(fps),
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                )
-            }
         }
 
         fatalError?.let { message ->

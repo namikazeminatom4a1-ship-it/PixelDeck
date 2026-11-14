@@ -34,6 +34,9 @@ interface GameDao {
     @Query("UPDATE games SET favorite = :favorite WHERE id = :id")
     suspend fun setFavorite(id: Long, favorite: Boolean)
 
+    @Query("UPDATE games SET systemId = :systemId, systemOverride = 1 WHERE id = :id")
+    suspend fun setSystem(id: Long, systemId: String)
+
     @Query("UPDATE games SET lastPlayedAt = :time WHERE id = :id")
     suspend fun markPlayed(id: Long, time: Long)
 

@@ -138,6 +138,7 @@ object SystemCatalog {
             thumbnailDir = "Nintendo_-_Nintendo_DS",
             accentSeed = 0xFFFF8A65,
             maxPlayers = 2,
+            preferredOrientation = PreferredOrientation.PORTRAIT,
             experimental = true,
             notes = "Touch screen input may be unavailable in this build.",
         ),
@@ -213,13 +214,20 @@ object SystemCatalog {
 
     val scanExtensions: Set<String> = byExtension.keys
 
-    fun resolve(extension: String, path: String): GameSystem? {
+    fun resolve(extension: String, path: String, sizeBytes: Long = 0L): GameSystem? {
         val candidates = byExtension[extension.lowercase()] ?: return null
         if (candidates.size == 1) return candidates.first()
         val lowerPath = path.lowercase()
-        return candidates.firstOrNull { system ->
+        candidates.firstOrNull { system ->
             system.folderHints.any { hint -> lowerPath.contains(hint) }
-        } ?: candidates.firstOrNull { !it.experimental } ?: candidates.first()
+        }?.let { return it }
+
+        if (extension.equals("iso", ignoreCase = true) && sizeBytes > 0L) {
+            if (sizeBytes > 2_000_000_000L) byId["ps2"]?.let { return it }
+            if (sizeBytes > 800_000_000L) byId["psp"]?.let { return it }
+        }
+
+        return candidates.firstOrNull { !it.experimental } ?: candidates.first()
     }
 
     fun forGameList(systemIds: Set<String>): List<GameSystem> =

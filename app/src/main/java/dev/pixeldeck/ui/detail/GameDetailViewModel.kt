@@ -31,6 +31,12 @@ class GameDetailViewModel(
         }
     }
 
+    fun setSystem(systemId: String) {
+        viewModelScope.launch {
+            repository.setSystem(gameId, systemId)
+        }
+    }
+
     fun deleteFromLibrary(onDone: () -> Unit) {
         viewModelScope.launch {
             repository.delete(gameId)

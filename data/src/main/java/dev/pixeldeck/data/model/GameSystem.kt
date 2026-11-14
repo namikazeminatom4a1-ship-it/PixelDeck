@@ -1,5 +1,7 @@
 package dev.pixeldeck.data.model
 
+enum class PreferredOrientation { LANDSCAPE, PORTRAIT }
+
 data class CoreSpec(
     val name: String,
     val experimental: Boolean = false,
@@ -21,6 +23,7 @@ data class GameSystem(
     val accentSeed: Long,
     val folderHints: Set<String> = emptySet(),
     val maxPlayers: Int = 1,
+    val preferredOrientation: PreferredOrientation = PreferredOrientation.LANDSCAPE,
     val experimental: Boolean = false,
     val notes: String? = null,
 ) {

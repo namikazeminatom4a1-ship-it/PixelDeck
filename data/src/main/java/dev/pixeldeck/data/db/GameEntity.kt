@@ -26,4 +26,5 @@ data class GameEntity(
     val playTimeMillis: Long = 0L,
     val favorite: Boolean = false,
     val discUris: String = "",
+    val systemOverride: Boolean = false,
 )

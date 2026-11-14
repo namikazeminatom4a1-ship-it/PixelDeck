@@ -66,10 +66,11 @@ class GameRepository(private val dao: GameDao) {
                         fileName = item.fileName,
                         treeUri = item.treeUri.toString(),
                         relativePath = item.relativePath,
-                        systemId = item.systemId,
+                        systemId = if (old.systemOverride) old.systemId else item.systemId,
                         sizeBytes = item.sizeBytes,
                         lastModified = item.lastModified,
                         discUris = discUris,
+                        systemOverride = old.systemOverride,
                     ),
                 )
                 updated++
@@ -82,6 +83,8 @@ class GameRepository(private val dao: GameDao) {
     }
 
     suspend fun setFavorite(id: Long, favorite: Boolean) = dao.setFavorite(id, favorite)
+
+    suspend fun setSystem(id: Long, systemId: String) = dao.setSystem(id, systemId)
 
     suspend fun markPlayed(id: Long, time: Long = System.currentTimeMillis()) = dao.markPlayed(id, time)
 

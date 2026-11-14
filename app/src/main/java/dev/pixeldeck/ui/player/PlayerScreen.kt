@@ -3,6 +3,7 @@ package dev.pixeldeck.ui.player
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.pm.ActivityInfo
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -86,6 +87,7 @@ import com.swordfish.libretrodroid.GLRetroViewData
 import com.swordfish.libretrodroid.LibretroDroid
 import dev.pixeldeck.AppContainer
 import dev.pixeldeck.data.model.Game
+import dev.pixeldeck.data.model.PreferredOrientation
 import dev.pixeldeck.data.settings.AppSettings
 import dev.pixeldeck.data.settings.ShaderChoice
 import dev.pixeldeck.design.component.GlassPanel
@@ -175,6 +177,17 @@ private fun PlayerContent(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
+    val activity = remember(context) { context.findActivity() }
+
+    DisposableEffect(activity, game.system.preferredOrientation) {
+        activity?.requestedOrientation = when (game.system.preferredOrientation) {
+            PreferredOrientation.LANDSCAPE -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            PreferredOrientation.PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+        }
+        onDispose {
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
+    }
 
     val data = remember(prepared) {
         GLRetroViewData(context).apply {

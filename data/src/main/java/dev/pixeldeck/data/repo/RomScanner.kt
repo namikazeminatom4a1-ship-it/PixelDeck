@@ -17,7 +17,8 @@ class RomScanner(
             ?: return@withContext ScanResult(0, 0, 0, "Could not open that folder.")
 
         val found = mutableListOf<ScannedGame>()
-        walk(root, treeUri, "", found)
+        val hintPrefix = root.name?.let { "$it/" } ?: ""
+        walk(root, treeUri, "", found, hintPrefix)
         repository.importScanned(found)
     }
 
@@ -26,6 +27,7 @@ class RomScanner(
         treeUri: Uri,
         relativePath: String,
         out: MutableList<ScannedGame>,
+        hintPrefix: String,
     ) {
         val children = dir.listFiles()
         val byName = children.mapNotNull { child ->
@@ -39,14 +41,22 @@ class RomScanner(
             if (name.startsWith(".")) continue
 
             if (file.isDirectory) {
-                walk(file, treeUri, "$relativePath$name/", out)
+                walk(file, treeUri, "$relativePath$name/", out, hintPrefix)
                 continue
             }
 
             val extension = name.substringAfterLast('.', "").lowercase()
             if (extension.isEmpty()) continue
 
-            val system = SystemCatalog.resolve(extension, relativePath + name) ?: continue
+            val hintPath = hintPrefix + relativePath + name
+            val sizeBytes = file.length()
+            var system = SystemCatalog.resolve(extension, hintPath, sizeBytes) ?: continue
+
+            if (extension == "iso") {
+                IsoProbe.detect(context, file.uri)?.let { detected ->
+                    SystemCatalog.byId[detected]?.let { system = it }
+                }
+            }
 
             if (hasCue && extension in MULTI_FILE_SIDECARS) continue
             if (extension == "m3u" || (extension == "gdi" && hasCue)) continue
@@ -60,7 +70,7 @@ class RomScanner(
                 treeUri = treeUri,
                 relativePath = relativePath + name,
                 systemId = system.id,
-                sizeBytes = file.length(),
+                sizeBytes = sizeBytes,
                 lastModified = file.lastModified(),
                 discUris = discUris,
             )
